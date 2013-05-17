@@ -52,7 +52,7 @@ class VmDeviceInterface;
 class Node;
 class VirtTools;
 
-enum VmStatus {VmStatusUnknown = 0, VmCheckAgain, VmRunning };
+enum VmStatus {VmStatusUnknown = 0, VmCheckAgain, VmRunning, VmTemplateStreaming };
 
 /*
 objectclass ( sstObjectClass:28

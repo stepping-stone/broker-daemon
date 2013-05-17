@@ -239,6 +239,9 @@ bool Vm::addAttribute(const string& actDn, const string& attr, const string& val
 		else if (0 == attr.compare("sstSpicePassword")) {
 			spicePassword = string(val);
 		}
+		else if (0 == attr.compare("sstThinProvisioningVirtualMachine")) {
+			status = VmTemplateStreaming;
+		}
 	}
 	else if (string::npos != actDn.find(",ou=people")) {
 		//SYSLOGLOGGER(logDEBUG) << "addAttribute: Vm People " << attr;
@@ -381,7 +384,7 @@ bool Vm::calculateBackupTime(time_t actTime) {
 	bool retval = false;
 	time_t backupTime = backupConfiguration.createTime();
 	SYSLOGLOGGER(logDEBUG) << "Vm::calculateBackupTime: " << actTime << " <= " << backupTime << " && " << backupTime << " <= " << (actTime + Config::getInstance()->getCycle());
-	if (0 < backupTime && actTime <= backupTime && backupTime <= actTime + Config::getInstance()->getCycle()) {
+	if (VmTemplateStreaming != status && 0 < backupTime && actTime <= backupTime && backupTime <= actTime + Config::getInstance()->getCycle()) {
 		retval = true;
 	}
 	return retval;
@@ -708,6 +711,9 @@ ostream& operator <<(ostream& s, const Vm& vm) {
 			break;
 		case VmRunning:
 			s << "RUNNING";
+			break;
+		case VmTemplateStreaming:
+			s << "STREAMING";
 			break;
 		default:
 			s << "UNKNOWN";
