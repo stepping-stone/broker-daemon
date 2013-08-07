@@ -1,0 +1,4 @@
+*.o
+*~
+Debug/*.d
+Debug/daemonR
