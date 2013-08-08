@@ -49,6 +49,8 @@ extern "C" {
 #include <unistd.h>
 #include <syslog.h>
 #include <string.h>
+
+#include "libvirt/virterror.h"
 }
 
 #include "include/signalHandler.hpp"
@@ -283,6 +285,9 @@ int main(int argc, char* argv[]) {
 			catch (VirtException &e) {
 				SYSLOGLOGGER(logERROR) << "Init -------------- caught VirtException ---------";
 				SYSLOGLOGGER(logERROR) << e;
+				if (VIR_ERR_NO_CONNECT == e.getCode() && 0 != e.getNodeUri().length()) {
+					vt->getConnection(e.getNodeUri(), true);
+				}
 			}
 			catch(...) {
 				SYSLOGLOGGER(logERROR) << "Init -------------- caught unknown ---------";
@@ -312,6 +317,9 @@ int main(int argc, char* argv[]) {
 			catch (VirtException &e) {
 				SYSLOGLOGGER(logERROR) << "Policy -------------- caught VirtException ---------";
 				SYSLOGLOGGER(logERROR) << e;
+				if (VIR_ERR_NO_CONNECT == e.getCode() && 0 != e.getNodeUri().length()) {
+					vt->getConnection(e.getNodeUri(), true);
+				}
 			}
 			catch(...) {
 				SYSLOGLOGGER(logERROR) << "Policy -------------- caught unknown ---------";

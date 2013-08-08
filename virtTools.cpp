@@ -51,15 +51,20 @@ extern "C" {
 
 using namespace std;
 
-virConnectPtr VirtTools::getConnection(const string nodeUri) {
+virConnectPtr VirtTools::getConnection(const string nodeUri, const bool force) {
 	virConnectPtr retval = NULL;
+	bool found = false;
 	std::map<std::string, virConnectPtr>::const_iterator it = connections.find(nodeUri);
 	if (connections.end() != it) {
 		retval = it->second;
+		found = true;
+		if (force && 1 != virConnectIsAlive(retval)) {
+			found = false;
+		}
 	}
-	else {
+	if (!found) {
 		retval = virConnectOpen(nodeUri.c_str());
-		if (retval != NULL) {
+		if (NULL != retval) {
 			connections[nodeUri] = retval;
 		}
 	}
@@ -101,23 +106,23 @@ bool VirtTools::checkVmsByNode(Node* node) {
 	try {
 		virConnectPtr conn;
 		conn = getConnection(nodeUri);
-		if (conn == NULL) {
+		if (NULL == conn) {
 			string message = "Failed to open connection to ";
 			message.append(nodeUri);
-			throw VirtException(message);
+			throw VirtException(message, virGetLastError(), nodeUri);
 		}
 		int numDomains = virConnectNumOfDomains(conn);
 		if (-1 == numDomains) {
 			string message = "Failed to get number of active domains from ";
 			message.append(nodeUri);
-			throw VirtException(message);
+			throw VirtException(message, virGetLastError(), nodeUri);
 		}
 		int* activeDomains = reinterpret_cast<int*>(malloc(sizeof(char *) * numDomains));
 		numDomains = virConnectListDomains(conn, activeDomains, numDomains);
 		if (-1 == numDomains) {
 			string message = "Failed to get ids of active domains from ";
 			message.append(nodeUri);
-			throw VirtException(message);
+			throw VirtException(message, virGetLastError(), nodeUri);
 		}
 		virDomainPtr domain;
 		SYSLOGLOGGER(logINFO) << "vt: Domains (" << numDomains << ") running on " << node->getName() << ": ";
@@ -159,6 +164,7 @@ bool VirtTools::checkVmsByNode(Node* node) {
 				retval = false;
 			}
 		}
+		throw e;
 	}
 
 	return retval;
@@ -268,20 +274,27 @@ const string VirtTools::getBackingStoreVolumeXML(const Vm* vm, const string& vol
 
 void VirtTools::createBackingStoreVolumeFile(const Vm* vm, const string& storagePoolName,
 		const string& volumeName) {
-	string nodeUri = vm->getNode()->getVirtUri();
+	const Node* vmNode = vm->getNode();
+	if (NULL == vmNode) {
+		string message = "Failed to get Node for VM ";
+		message.append(vm->getName());
+		throw VirtException(message);
+	}
+	string nodeUri = vmNode->getVirtUri();
 	virConnectPtr conn;
 	conn = getConnection(nodeUri);
 	if (conn == NULL) {
 		string message = "Failed to open connection to ";
 		message.append(nodeUri);
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
 	virStoragePoolPtr pool;
 	pool = virStoragePoolLookupByUUIDString(conn, storagePoolName.c_str());
 	if (pool == NULL) {
-		//virConnectClose(conn);
-		throw VirtException("Failed to open storagePool ");
+		string message = "Failed to open storagePool ";
+		message.append(storagePoolName);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
 	virStorageVolPtr volume;
@@ -290,8 +303,9 @@ void VirtTools::createBackingStoreVolumeFile(const Vm* vm, const string& storage
 		if (-1 == virStoragePoolFree(pool)) {
 			SYSLOGLOGGER(logWARNING) << "vt: Unable to free storgepool object";
 		}
-		//virConnectClose(conn);
-		throw VirtException("Failed to create Volume ");
+		string message = "Failed to create Volume ";
+		message.append(volumeName);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 	if (-1 == virStoragePoolFree(pool)) {
 		SYSLOGLOGGER(logWARNING) << "vt: Unable to free storgepool object";
@@ -305,23 +319,24 @@ void VirtTools::createBackingStoreVolumeFile(const Vm* vm, const string& storage
 void VirtTools::startVm(const Vm* vm) {
 	const Node* vmNode = vm->getNode();
 	if (NULL == vmNode) {
-		string message = "Failed to get Node ";
-		message.append(vmNode->getVirtUri());
+		string message = "Failed to get Node for VM ";
+		message.append(vm->getName());
 		throw VirtException(message);
 	}
+	string nodeUri = vmNode->getVirtUri();
 	virConnectPtr conn;
-	conn = getConnection(vmNode->getVirtUri());
+	conn = getConnection(nodeUri);
 	if (conn == NULL) {
 		string message = "Failed to open connection to ";
-		message.append(vmNode->getVirtUri());
-		throw VirtException(message);
+		message.append(nodeUri);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
 	SYSLOGLOGGER(logDEBUG) << "vt.startVm: " << getVmXml(vm);
 	virDomainPtr domain = virDomainCreateXML(conn, getVmXml(vm).c_str(), 0);
 	if (domain == NULL) {
 		//virConnectClose(conn);
-		throw VirtException("Failed to create domain");
+		throw VirtException("Failed to create domain", virGetLastError(), nodeUri);
 	}
 
 	if (-1 == virDomainFree(domain)) {
@@ -333,23 +348,24 @@ void VirtTools::startVm(const Vm* vm) {
 void VirtTools::stopVmForRestore(const Vm* vm) {
 	const Node* vmNode = vm->getNode();
 	if (NULL == vmNode) {
-		string message = "Failed to get Node ";
-		message.append(vmNode->getVirtUri());
+		string message = "Failed to get Node for VM ";
+		message.append(vm->getName());
 		throw VirtException(message);
 	}
+	string nodeUri = vmNode->getVirtUri();
 	virConnectPtr conn;
-	conn = getConnection(vmNode->getVirtUri());
+	conn = getConnection(nodeUri);
 	if (conn == NULL) {
 		string message = "Failed to open connection to ";
-		message.append(vmNode->getVirtUri());
-		throw VirtException(message);
+		message.append(nodeUri);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 	virDomainPtr domain = virDomainLookupByName(conn, vm->getName().c_str());
 	if (domain == NULL) {
 		string message = "Failed to find domain ";
 		message.append(vm->getName()).append(" on ").append(vmNode->getVirtUri());
 		//virConnectClose(conn);
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
 	SYSLOGLOGGER(logWARNING) << "vt.stopVmForRestore: " << vm->getName();
@@ -357,14 +373,14 @@ void VirtTools::stopVmForRestore(const Vm* vm) {
 	if (0 > retval) {
 		string message = "Failed to get domain state from ";
 		message.append(vm->getName());
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 	else if (1 == retval) {
 		retval = virDomainDestroy(domain);
 		if (0 != retval) {
 			string message = "Failed to destroy domain ";
 			message.append(vm->getName());
-			throw VirtException(message);
+			throw VirtException(message, virGetLastError(), nodeUri);
 		}
 	}
 
@@ -372,7 +388,7 @@ void VirtTools::stopVmForRestore(const Vm* vm) {
 	if (0 != retval) {
 		string message = "Failed to undefine domain ";
 		message.append(vm->getName());
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
 	if (-1 == virDomainFree(domain)) {
@@ -384,32 +400,32 @@ void VirtTools::stopVmForRestore(const Vm* vm) {
 void VirtTools::migrateVm(const Vm* vm, const Node* node, const string spicePort) {
 	const Node* vmNode = vm->getNode();
 	if (NULL == vmNode) {
-		string message = "Failed to get Node ";
-		message.append(vmNode->getVirtUri());
+		string message = "Failed to get Node for VM ";
+		message.append(vm->getName());
 		throw VirtException(message);
 	}
-
+	string nodeUri = vmNode->getVirtUri();
 	virConnectPtr conn;
-	conn = getConnection(vmNode->getVirtUri());
+	conn = getConnection(nodeUri);
 	if (conn == NULL) {
 		string message = "Failed to open connection to ";
-		message.append(vmNode->getVirtUri());
-		throw VirtException(message);
+		message.append(nodeUri);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 	virDomainPtr domain = virDomainLookupByName(conn, vm->getName().c_str());
 	if (domain == NULL) {
 		string message = "Failed to find domain ";
 		message.append(vm->getName()).append(" on ").append(vmNode->getVirtUri());
 		//virConnectClose(conn);
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
-	char* xmlstr = virDomainGetXMLDesc(domain, VIR_DOMAIN_XML_SECURE);
+	char* xmlstr = virDomainGetXMLDesc(domain, 0);
 	if (xmlstr == NULL) {
 		string message = "Failed to get XML from domain ";
 		message.append(vm->getName()).append(" on ").append(vmNode->getVirtUri());
 		//virConnectClose(conn);
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 	string xml = (xmlstr);
 	string listen = node->getVLanIP("pub");
@@ -455,7 +471,7 @@ void VirtTools::migrateVm(const Vm* vm, const Node* node, const string spicePort
 		string message = "Failed to migrate domain ";
 		message.append(vm->getName()).append(" from ").append(vmNode->getVirtUri()).append(" to ").append(node->getVirtUri());
 		//virConnectClose(conn);
-		throw VirtException(message);
+		throw VirtException(message, virGetLastError(), nodeUri);
 	}
 
 	/*

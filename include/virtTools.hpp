@@ -54,6 +54,7 @@
 
 extern "C" {
 #include "libvirt/libvirt.h"
+#include "libvirt/virterror.h"
 }
 
 class Vm;
@@ -86,7 +87,7 @@ public:
 		}
 	};
 
-	virConnectPtr getConnection(const std::string nodeUri);
+	virConnectPtr getConnection(const std::string nodeUri, const bool force = false);
 
 	bool checkVmsPerNode();
 
@@ -137,16 +138,56 @@ public:
 };
 
 class VirtException : public std::runtime_error {
+private:
+	int virtLevel;
+	int virtCode;
+	std::string virtMessage;
+	std::string nodeUri;
+
 public:
-	VirtException(const std::string& _message) :
-			std::runtime_error(_message) {
+	VirtException(const std::string& _message, const virErrorPtr err = NULL, const std::string& _nodeUri = "") throw() :
+			std::runtime_error(_message), virtLevel(-1), virtCode(-1), virtMessage(""), nodeUri(_nodeUri) {
+		if (NULL != err) {
+			virtLevel = err->level;
+			virtCode = err->code;
+			virtMessage = err->message;
+		}
+	}
+
+	virtual ~VirtException() throw() {};
+
+	virtual const char* what() const throw() {
+		std::string message = std::runtime_error::what();
+		if (-1 != virtCode) {
+			message.append("; ").append(virtMessage).append(" (L: ");
+			message.append(std::to_string(virtLevel)).append(", C: ");
+			message.append(std::to_string(virtCode)).append(" ) ");
+		}
+
+		return message.c_str();
+	}
+
+//	const bool hasErrno() const {
+//		return -1 != errno;
+//	}
+
+	const int getLevel() const {
+		return virtLevel;
+	}
+
+	const int getCode() const {
+		return virtCode;
+	}
+
+	const std::string getNodeUri() const {
+		return nodeUri;
 	}
 
 	/**
 	 * This method can be used to dump the data of a VirtException-Object.
 	 * It is only useful for debugging purposes at the moment
 	 */
-	friend std::ostream& operator <<(std::ostream &s, VirtException e);
+	friend std::ostream& operator <<(std::ostream &s, const VirtException e);
 };
 
 #endif /* VIRTTOOLS_H_ */
